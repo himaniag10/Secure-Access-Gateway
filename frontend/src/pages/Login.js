@@ -1,23 +1,61 @@
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 
-function Login() {
+function Login({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
+  const [adminPasskey, setAdminPasskey] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check if role was passed from Home page
+  useEffect(() => {
+    if (location.state?.role) {
+      setRole(location.state.role);
+    }
+  }, [location.state]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    // Validate admin passkey if role is admin
+    if (role === "admin" && !adminPasskey) {
+      alert("Admin passkey is required for admin login");
+      return;
+    }
+
     try {
-      const res = await axios.post("http://localhost:5000/api/auth/login", {
+      const loginData = {
         email,
         password,
-        role,
-      });
+      };
+
+      // Only include adminPasskey if role is admin
+      if (role === "admin") {
+        loginData.adminPasskey = adminPasskey;
+      }
+
+      const res = await axios.post(
+        "http://localhost:5000/api/auth/login",
+        loginData
+      );
+
+      // ✅ Store auth data
       localStorage.setItem("token", res.data.token);
-      navigate("/dashboard");
+      localStorage.setItem("userRole", res.data.role);
+      localStorage.setItem("userName", res.data.name);
+
+      // ✅ Call the callback to update App state
+      if (onLogin) {
+        onLogin();
+      }
+
+      alert(`Welcome ${res.data.name}! Logged in as ${res.data.role}`);
+
+      // ✅ Navigate with replace to prevent back button issues
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       alert(error.response?.data?.message || "Login failed");
     }
@@ -30,6 +68,14 @@ function Login() {
           Secure Access Gateway 🔐
         </h2>
 
+        {role === "admin" && (
+          <div className="bg-red-900 bg-opacity-50 border border-red-600 p-3 rounded-md mb-4">
+            <p className="text-sm text-red-200 text-center">
+              ⚠️ Admin Login - Passkey Required
+            </p>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block mb-1 text-sm text-gray-300">Email</label>
@@ -39,6 +85,7 @@ function Login() {
               placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              required
             />
           </div>
 
@@ -50,6 +97,7 @@ function Login() {
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
             />
           </div>
 
@@ -65,16 +113,39 @@ function Login() {
             </select>
           </div>
 
+          {role === "admin" && (
+            <div>
+              <label className="block mb-1 text-sm text-gray-300">
+                Admin Passkey 🔑
+              </label>
+              <input
+                type="password"
+                className="w-full p-3 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 border border-red-600"
+                placeholder="Enter admin passkey"
+                value={adminPasskey}
+                onChange={(e) => setAdminPasskey(e.target.value)}
+                required
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Contact system administrator for admin passkey
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 rounded-md font-semibold transition shadow-lg shadow-cyan-700/40"
+            className={`w-full py-3 rounded-md font-semibold transition shadow-lg ${
+              role === "admin"
+                ? "bg-red-600 hover:bg-red-700 shadow-red-700/40"
+                : "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-700/40"
+            }`}
           >
-            Login
+            {role === "admin" ? "Login as Admin" : "Login as User"}
           </button>
         </form>
 
         <p className="text-center text-gray-400 mt-6 text-sm">
-          Don’t have an account?{" "}
+          Don't have an account?{" "}
           <Link
             to="/register"
             className="text-cyan-400 hover:text-cyan-300 transition"

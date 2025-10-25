@@ -6,6 +6,24 @@ import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+// Admin passkey - store this in .env file in production
+const ADMIN_PASSKEY = process.env.ADMIN_PASSKEY || "ADMIN2024SECRET";
+
+// 🔹 Helper function to record audit logs safely
+const createAuditLog = async (userId, action, ip, success = true) => {
+  try {
+    await Audit.create({
+      user: userId,
+      action,
+      ip: ip || "unknown",
+      success,
+      timestamp: new Date(),
+    });
+  } catch (err) {
+    console.error("Audit log failed:", err.message);
+  }
+};
+
 // Generate JWT Token
 const generateToken = (user) => {
   return jwt.sign(
@@ -21,6 +39,7 @@ const generateToken = (user) => {
 router.get("/me", protect, async (req, res) => {
   try {
     if (req.user) {
+      await createAuditLog(req.user._id, "Fetched User Profile (/me)", req.ip, true);
       res.json({
         _id: req.user._id,
         name: req.user.name,
@@ -41,7 +60,7 @@ router.get("/me", protect, async (req, res) => {
 // @access  Public
 router.post("/register", async (req, res) => {
   try {
-    let { name, email, password, role } = req.body;
+    let { name, email, password, role, adminPasskey } = req.body;
 
     console.log("Register attempt:", { name, email, role });
 
@@ -54,11 +73,16 @@ router.post("/register", async (req, res) => {
         .json({ message: "Password must be at least 6 characters" });
     }
 
-    // Prevent unauthorized admin creation
+    // ✅ Check if trying to register as admin
     if (role === "admin") {
-      return res
-        .status(403)
-        .json({ message: "You cannot register as admin directly" });
+      if (!adminPasskey) {
+        return res
+          .status(403)
+          .json({ message: "Admin passkey is required to register as admin" });
+      }
+      if (adminPasskey !== ADMIN_PASSKEY) {
+        return res.status(403).json({ message: "Invalid admin passkey" });
+      }
     }
 
     email = email.trim().toLowerCase();
@@ -69,27 +93,23 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // ✅ DON'T hash manually - let the model do it!
+    // ✅ Pass plain password - pre-save hook will hash it
     const user = await User.create({
       name,
       email,
-      password: password, // ✅ Pass plain password - pre-save hook will hash it
+      password: password,
       role: role || "user",
     });
 
-    console.log("User registered successfully:", user.email);
+    console.log("✅ User registered successfully:", user.email, "Role:", user.role);
 
     // Audit log for registration
-    try {
-      await Audit.create({
-        user: user._id,
-        action: "User Registered",
-        ip: req.ip || req.connection?.remoteAddress || "unknown",
-        success: true,
-      });
-    } catch (auditError) {
-      console.error("Audit error during registration:", auditError);
-    }
+    await createAuditLog(
+      user._id,
+      user.role === "admin" ? "Admin Registered" : "User Registered",
+      req.ip,
+      true
+    );
 
     res.status(201).json({
       _id: user._id,
@@ -116,6 +136,7 @@ router.post("/login", async (req, res) => {
 
     let email = req.body.email?.trim().toLowerCase();
     let password = req.body.password?.trim();
+    let adminPasskey = req.body.adminPasskey;
 
     if (!email || !password) {
       console.log("Missing credentials");
@@ -126,49 +147,45 @@ router.post("/login", async (req, res) => {
 
     console.log("Looking up user:", email);
     const user = await User.findOne({ email });
-    
+
     if (!user) {
       console.log("User not found:", email);
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    // ✅ Check if user is admin and validate passkey
+    if (user.role === "admin") {
+      if (!adminPasskey) {
+        return res
+          .status(403)
+          .json({ message: "Admin passkey is required for admin login" });
+      }
+      if (adminPasskey !== ADMIN_PASSKEY) {
+        await createAuditLog(user._id, "Failed Admin Login - Invalid Passkey", req.ip, false);
+        return res.status(403).json({ message: "Invalid admin passkey" });
+      }
+    }
+
     console.log("User found, comparing passwords");
-    
+
     // ✅ Use the model's matchPassword method
     const isMatch = await user.matchPassword(password);
     console.log("Password match result:", isMatch);
 
     if (!isMatch) {
-      console.log("Password mismatch for:", email);
-      
-      // Audit failed login
-      try {
-        await Audit.create({
-          user: user._id,
-          action: "Failed Login",
-          ip: req.ip || req.connection?.remoteAddress || "unknown",
-          success: false,
-        });
-      } catch (auditError) {
-        console.error("Audit error during failed login:", auditError);
-      }
-      
+      await createAuditLog(user._id, "Failed Login - Wrong Password", req.ip, false);
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    console.log("Login successful for:", email);
+    console.log("✅ Login successful for:", email);
 
     // Audit successful login
-    try {
-      await Audit.create({
-        user: user._id,
-        action: "Login",
-        ip: req.ip || req.connection?.remoteAddress || "unknown",
-        success: true,
-      });
-    } catch (auditError) {
-      console.error("Audit error during successful login:", auditError);
-    }
+    await createAuditLog(
+      user._id,
+      user.role === "admin" ? "Admin Login" : "User Login",
+      req.ip,
+      true
+    );
 
     const token = generateToken(user);
     console.log("Token generated, sending response");
@@ -182,10 +199,9 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error("Login error:", error);
-    console.error("Error stack:", error.stack);
-    res.status(500).json({ 
-      message: "Server error", 
-      error: error.message 
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
     });
   }
 });
@@ -195,21 +211,29 @@ router.post("/login", async (req, res) => {
 // @access  Private
 router.post("/logout", protect, async (req, res) => {
   try {
-    // Audit logout
-    try {
-      await Audit.create({
-        user: req.user._id,
-        action: "Logout",
-        ip: req.ip || req.connection?.remoteAddress || "unknown",
-        success: true,
-      });
-    } catch (auditError) {
-      console.error("Audit error during logout:", auditError);
-    }
-
+    await createAuditLog(req.user._id, "Logout", req.ip, true);
     res.json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// @route   POST /api/auth/activity
+// @desc    Log any custom user activity (for frontend tracking)
+// @access  Private
+router.post("/activity", protect, async (req, res) => {
+  try {
+    const { action, success } = req.body;
+
+    if (!action) {
+      return res.status(400).json({ message: "Action is required" });
+    }
+
+    await createAuditLog(req.user._id, action, req.ip, success);
+    res.status(201).json({ message: "Activity logged successfully" });
+  } catch (error) {
+    console.error("Error logging user activity:", error);
     res.status(500).json({ message: "Server error" });
   }
 });

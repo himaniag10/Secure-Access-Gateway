@@ -1,84 +1,79 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 
 function Dashboard() {
-  const [user, setUser] = useState({ name: "", email: "", role: "" });
-  const [resources, setResources] = useState([]);
-  const [logs, setLogs] = useState([]);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // Fetch logged-in user info
         const { data } = await api.get("/auth/me");
         setUser(data);
-
-        // Fetch resources (simulate for now, later can use real API)
-        const userResources = [
-          { name: "Finance App", access: data.role === "admin" || data.role === "user" },
-          { name: "HR Dashboard", access: data.role === "admin" },
-          { name: "DevOps Tool", access: data.role === "security_officer" },
-        ];
-        setResources(userResources);
-
-        // Fetch audit logs (simulate for now, can replace with backend API)
-        const auditLogs = [
-          { who: "John", when: "2025-10-22 10:00", from: "192.168.1.2", what: "Dashboard" },
-          { who: "Alice", when: "2025-10-22 09:30", from: "192.168.1.3", what: "HR" },
-        ];
-        setLogs(auditLogs);
-      } catch (err) {
-        console.error(err);
+        setLoading(false);
+      } catch (error) {
+        console.error(error);
+        localStorage.clear();
+        navigate("/login");
       }
     };
     fetchUser();
-  }, []);
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="text-white text-xl animate-pulse">Loading...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 md:ml-64">
-      <h1 className="text-4xl font-bold text-cyan-400 mb-6 drop-shadow-lg">
-        Welcome, {user.name || "User"} 🛡️
-      </h1>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white p-6 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-4xl font-bold mb-8 tracking-wide">Welcome, {user?.name}!</h1>
 
-      <h2 className="text-2xl font-semibold mb-4 text-gray-300">💻 Your Resources</h2>
-      <div className="grid md:grid-cols-3 gap-6 mb-10">
-        {resources.map((res, idx) => (
+        <div className="bg-gray-800 p-6 rounded-xl shadow-xl mb-6 transition-transform hover:scale-105">
+          <p className="text-gray-300 mb-2">
+            <span className="font-semibold">Email:</span> {user?.email}
+          </p>
+          <p className="text-gray-300">
+            <span className="font-semibold">Role:</span>{" "}
+            <span
+              className={`px-3 py-1 rounded-full text-sm ${
+                user?.role === "admin"
+                  ? "bg-red-600 text-white"
+                  : "bg-blue-600 text-white"
+              }`}
+            >
+              {user?.role?.toUpperCase()}
+            </span>
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Resources - Available for all users */}
           <div
-            key={idx}
-            className={`p-6 rounded-lg shadow-lg transition transform hover:scale-105 ${
-              res.access
-                ? "bg-cyan-700 hover:bg-cyan-600 text-white"
-                : "bg-gray-700 hover:bg-gray-600 text-gray-300"
-            }`}
+            onClick={() => navigate("/resources")}
+            className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-xl shadow-xl cursor-pointer hover:scale-105 transform transition"
           >
-            <h3 className="text-xl font-bold mb-2">{res.name}</h3>
-            <p className="text-sm">{res.access ? "Access Granted ✅" : "Access Denied ❌"}</p>
+            <h3 className="text-2xl font-bold mb-2">🖥️ Resources</h3>
+            <p className="text-blue-100">Access your resources and tools</p>
           </div>
-        ))}
-      </div>
 
-      <h2 className="text-2xl font-semibold mb-4 text-gray-300">📜 Audit Logs</h2>
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-gray-800 rounded-lg">
-          <thead>
-            <tr className="border-b border-gray-700">
-              <th className="py-2 px-4 text-left text-gray-400">Who</th>
-              <th className="py-2 px-4 text-left text-gray-400">When</th>
-              <th className="py-2 px-4 text-left text-gray-400">From</th>
-              <th className="py-2 px-4 text-left text-gray-400">What</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log, idx) => (
-              <tr key={idx} className="border-b border-gray-700 hover:bg-gray-700 transition-colors">
-                <td className="py-2 px-4">{log.who}</td>
-                <td className="py-2 px-4">{log.when}</td>
-                <td className="py-2 px-4">{log.from}</td>
-                <td className="py-2 px-4">{log.what}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          {/* Audit Logs - Admin only */}
+          {user?.role === "admin" && (
+            <div
+              onClick={() => navigate("/audit-logs")}
+              className="bg-gradient-to-br from-red-600 to-red-800 p-6 rounded-xl shadow-xl cursor-pointer hover:scale-105 transform transition"
+            >
+              <h3 className="text-2xl font-bold mb-2">📋 Audit Logs</h3>
+              <p className="text-red-100">View system audit logs</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
