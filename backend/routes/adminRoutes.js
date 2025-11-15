@@ -173,34 +173,56 @@ router.get("/users", protect, adminOnly, async (req, res) => {
 // @desc Grant a user access to a resource
 // @access Private/Admin
 router.post("/grant-access", protect, adminOnly, async (req, res) => {
-  const { userId, resourceId } = req.body;
-
   try {
+    const { userId, resourceId } = req.body;
+
+    console.log("Grant access request:", { userId, resourceId });
+
+    if (!userId || !resourceId) {
+      return res.status(400).json({ message: "User ID and Resource ID are required" });
+    }
+
     const user = await User.findById(userId);
     const resource = await Resource.findById(resourceId);
 
-    if (!user || !resource) {
-      return res.status(404).json({ message: "User or Resource not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Prevent duplicate access
-    if (!resource.usersWithAccess.includes(user._id)) {
-      resource.usersWithAccess.push(user._id);
-      await resource.save();
-
-      // Audit log
-      await Audit.create({
-        user: req.user._id,
-        action: `Granted access to ${resource.name} for ${user.name}`,
-        ip: req.ip || req.connection?.remoteAddress || "unknown",
-        success: true,
-      });
+    if (!resource) {
+      return res.status(404).json({ message: "Resource not found" });
     }
 
-    res.json({ message: `Access granted to ${user.name} for ${resource.name}` });
+    // Check if user already has access
+    const hasAccess = resource.usersWithAccess.some(
+      (id) => id.toString() === userId.toString()
+    );
+
+    if (hasAccess) {
+      return res.status(400).json({ message: "User already has access to this resource" });
+    }
+
+    // Grant access
+    resource.usersWithAccess.push(user._id);
+    await resource.save();
+
+    console.log("Access granted successfully");
+
+    // Audit log
+    await Audit.create({
+      user: req.user._id,
+      action: `Granted access to ${resource.name} for ${user.name}`,
+      ip: req.ip || req.connection?.remoteAddress || "unknown",
+      success: true,
+    });
+
+    res.json({ 
+      message: `Access granted to ${user.name} for ${resource.name}`,
+      resource: await Resource.findById(resourceId).populate("usersWithAccess", "name email")
+    });
   } catch (error) {
     console.error("Grant access error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
@@ -208,20 +230,33 @@ router.post("/grant-access", protect, adminOnly, async (req, res) => {
 // @desc Revoke a user's access to a resource
 // @access Private/Admin
 router.post("/revoke-access", protect, adminOnly, async (req, res) => {
-  const { userId, resourceId } = req.body;
-
   try {
+    const { userId, resourceId } = req.body;
+
+    console.log("Revoke access request:", { userId, resourceId });
+
+    if (!userId || !resourceId) {
+      return res.status(400).json({ message: "User ID and Resource ID are required" });
+    }
+
     const user = await User.findById(userId);
     const resource = await Resource.findById(resourceId);
 
-    if (!user || !resource) {
-      return res.status(404).json({ message: "User or Resource not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
+    if (!resource) {
+      return res.status(404).json({ message: "Resource not found" });
+    }
+
+    // Revoke access
     resource.usersWithAccess = resource.usersWithAccess.filter(
-      (id) => id.toString() !== user._id.toString()
+      (id) => id.toString() !== userId.toString()
     );
     await resource.save();
+
+    console.log("Access revoked successfully");
 
     // Audit log
     await Audit.create({
@@ -231,10 +266,13 @@ router.post("/revoke-access", protect, adminOnly, async (req, res) => {
       success: true,
     });
 
-    res.json({ message: `Access revoked from ${user.name} for ${resource.name}` });
+    res.json({ 
+      message: `Access revoked from ${user.name} for ${resource.name}`,
+      resource: await Resource.findById(resourceId).populate("usersWithAccess", "name email")
+    });
   } catch (error) {
     console.error("Revoke access error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 

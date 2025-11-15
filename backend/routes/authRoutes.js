@@ -7,7 +7,7 @@ import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
 
 // Admin passkey - store this in .env file in production
-const ADMIN_PASSKEY = process.env.ADMIN_PASSKEY || "ADMIN2024SECRET";
+const ADMIN_PASSKEY = process.env.ADMIN_PASSKEY || "00000";
 
 // 🔹 Helper function to record audit logs safely
 const createAuditLog = async (userId, action, ip, success = true) => {
@@ -24,7 +24,6 @@ const createAuditLog = async (userId, action, ip, success = true) => {
   }
 };
 
-// Generate JWT Token
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id, name: user.name, role: user.role },
@@ -93,7 +92,6 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // ✅ Pass plain password - pre-save hook will hash it
     const user = await User.create({
       name,
       email,

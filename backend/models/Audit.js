@@ -5,7 +5,7 @@ const auditSchema = new mongoose.Schema({
   action: { type: String, required: true },
   ip: { type: String },
   success: { type: Boolean, default: true },
-}, { timestamps: true }); // ✅ Important
+}, { timestamps: true }); 
 
 const Audit = mongoose.model("Audit", auditSchema);
 export default Audit;
