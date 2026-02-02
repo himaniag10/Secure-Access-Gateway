@@ -12,7 +12,7 @@ function ManageResources() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async () => {
     try {
@@ -234,8 +234,8 @@ function ManageResources() {
                       (user) =>
                         !resource.usersWithAccess?.some((u) => u._id === user._id)
                     ).length === 0 && (
-                      <span className="text-gray-500 italic">All users have access</span>
-                    )}
+                        <span className="text-gray-500 italic">All users have access</span>
+                      )}
                   </div>
                 </div>
               </div>
